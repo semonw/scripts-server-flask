@@ -163,25 +163,23 @@ def publish_result():
 @socketio.on('connect')
 def connected_msg():
     """客户端连接"""
-    logger.info('client connected!', request.sid)
-    socketio.emit('hello', 'hello')
+    logger.info('客户端连接！')
 
 
 @socketio.on('disconnect')
 def disconnect_msg():
     """客户端离开"""
-    logger.info('client disconnected!')
+    logger.info('客户端断开连接！')
 
 
 @socketio.on('heartbeat')
 def handle_heartbeat():
-    logger.info('received heartbeating')
-    socketio.send('heartbeat')
+    socketio.emit('heartbeat', 'heartbeat')
 
 
 def broadcasting(data):
-    logger.info("broadcasting %s" % data)
-    socketio.emit('message', data)
+    logger.info("Broadcasting %s" % data)
+    socketio.emit('message', data, broadcast=True)
 
 
 if __name__ == '__main__':
