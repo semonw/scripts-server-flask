@@ -174,9 +174,9 @@ def disconnect_msg():
 
 
 @socketio.on('heartbeat')
-def handle_heartbeat(count):
+def handle_heartbeat():
     logger.info('received heartbeating')
-    socketio.send(('heartbeat' % count))
+    socketio.send('heartbeat')
 
 
 def broadcasting(data):
