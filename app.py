@@ -22,7 +22,7 @@ def default_output():
     indexfiles = ['index.html', 'index.htm', 'index.php']
     for idx in indexfiles:
         if os.path.exists(os.path.join('static', idx)):
-            app.send_static_file(idx)
+            return app.send_static_file(idx)
     logger.error('不存在index.html文件，请检查部署路径。')
     return "Hello, Flask. No Index.html found."
 
