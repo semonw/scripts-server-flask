@@ -5,6 +5,7 @@ import datetime
 import logging
 import os
 import subprocess
+import sys
 import time
 
 import pytz
@@ -15,6 +16,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 socketio = SocketIO(app)
+executingFlag = False
 
 
 @app.route('/')
@@ -39,6 +41,7 @@ def execScripts(script_path):
     else:
         logger.info("开始执行脚本 %s" % script_path)
         starttime = datetime.datetime.now()
+        executingFlag = True
         p = subprocess.Popen(script_path, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         while p.poll() is None:
             # 注意: 需要脚本里面实时的将stdout进行flush， 否则输出将出现延迟
@@ -49,9 +52,11 @@ def execScripts(script_path):
                 broadcasting(line)
 
         endtime = datetime.datetime.now()
+        executingFlag = False
         logger.info("脚本执行完成，总计花费时间 %d 秒." % (endtime - starttime).seconds)
         if p.returncode == 0:
             logger.info("success, subprocess returncode %d" % p.returncode)
+
             return {
                 'status': 200
             }
@@ -64,6 +69,12 @@ def execScripts(script_path):
 
 @app.route('/clock/<name>')
 def onclock(name):
+    if executingFlag:
+        logger.error("当前有脚本正在执行中， 不允许重复发起。")
+        return {
+            'status': 503,
+            'msg': "当前有脚本正在执行"
+        }
     if name == 'all':
         logger.info("clocking all")
         return execScripts(script_all)
@@ -163,13 +174,13 @@ def publish_result():
 @socketio.on('connect')
 def connected_msg():
     """客户端连接"""
-    logger.info('客户端连接！')
+    logger.info("sid：" + request.sid + ', IP: ' + request.remote_addr + ' 连接！')
 
 
 @socketio.on('disconnect')
 def disconnect_msg():
     """客户端离开"""
-    logger.info('客户端断开连接！')
+    logger.info("sid：" + request.sid + ', IP: ' + request.remote_addr + ' 断开连接！')
 
 
 @socketio.on('heartbeat')
@@ -178,12 +189,19 @@ def handle_heartbeat():
 
 
 def broadcasting(data):
+    data = data.decode()
     logger.info("Broadcasting %s" % data)
-    socketio.emit('message', data, broadcast=True)
+    socketio.emit('message', {'data': data}, broadcast=True)
 
 
 if __name__ == '__main__':
     host = '0.0.0.0'
     port = 5000
-    logger.info("listening http://%s:%d" % (host, port))
-    socketio.run(app, '0.0.0.0', 5000)
+    logger.info("Embedded Server started, listening http://%s:%d" % (host, port))
+    # 不同系统按照不同命令启动
+    if sys.platform == 'win32':
+        socketio.run(app, '0.0.0.0', 5000)
+    elif sys.platform == 'linux' or sys.platform == 'darwin':
+        socketio.run(app, '0.0.0.0', 5000)
+    else:
+        socketio.run(app, '0.0.0.0', 5000)
