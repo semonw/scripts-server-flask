@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import pytz
@@ -16,23 +17,10 @@ from flask_socketio import SocketIO
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-# file_handle = logging.FileHandler("log.txt", mode='w', encoding="UTF-8")
-# fmt = logging.Formatter(f"{'*' * 28}\n"
-#                         "> %(asctime)s\n"
-#                         "> %(levelname)s - "
-#                         "%(filename)s - "
-#                         "[line:%(lineno)d]\n"
-#                         f"{'-' * 40}\n"
-#                         "  %(message)s\n"
-#                         f"{'-' * 40}\n\n",
-#                         datefmt="%a, %d %b %Y"
-#                                 "%H:%M:%S"
-#                         )
-# file_handle.setFormatter(fmt)  # 文件句柄设置格式
-# logger.addHandler(file_handle)  # logger对象绑定文件句柄
 
 app = Flask(__name__)
 socketio = SocketIO(app)
+threads = []
 executingFlag = False
 
 
@@ -49,39 +37,74 @@ def default_output():
 script_all = os.path.join('scripts', 'callMac_all.sh')
 script_li = os.path.join('scripts', 'callMac_li.sh')
 script_wang = os.path.join('scripts', 'callMac_wang.sh')
+script_clear = os.path.join('scripts', 'clear.sh')
 
 
-def execScripts(script_path):
-    if not os.path.exists(script_path):
-        logger.error("script not exist!")
-        return 'script not exist!'
-    else:
-        logger.info("开始执行脚本 %s" % script_path)
-        starttime = datetime.datetime.now()
-        executingFlag = True
-        p = subprocess.Popen(script_path, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        while p.poll() is None:
-            # 注意: 需要脚本里面实时的将stdout进行flush， 否则输出将出现延迟
-            line = p.stdout.readline()
-            line = line.strip()
-            if line:
-                # 通过ws进行广播
-                broadcasting(line)
+class ScriptExecutor(threading.Thread):
+    script_file = ''
 
-        endtime = datetime.datetime.now()
-        executingFlag = False
-        logger.info("脚本执行完成，总计花费时间 %d 秒." % (endtime - starttime).seconds)
-        if p.returncode == 0:
-            logger.info("success, subprocess returncode %d" % p.returncode)
+    def __init__(self, script_file):
+        threading.Thread.__init__(self)
+        self.script_file = script_file
+        self.executingFlag = executingFlag
 
-            return {
-                'status': 200
-            }
+    def run(self):
+        if not os.path.exists(self.script_file):
+            logger.error("script not exist!")
+            return 'script not exist!'
         else:
-            logger.info("failure, subprocess returncode %d" % p.returncode)
-            return {
-                'status': 500
-            }
+            logger.info("开始执行脚本 %s" % self.script_file)
+            starttime = datetime.datetime.now()
+            global executingFlag
+            executingFlag = True
+            p = subprocess.Popen(self.script_file, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            while p.poll() is None:
+                # 注意: 需要脚本里面实时的将stdout进行flush， 否则输出将出现延迟
+                line = p.stdout.readline()
+                line = line.strip()
+                if line:
+                    # 通过ws进行广播
+                    data = line.decode()
+                    broadcasting({
+                        'data': data
+                    })
+
+            endtime = datetime.datetime.now()
+            executingFlag = False
+            logger.info("脚本执行完成，总计花费时间 %d 秒." % (endtime - starttime).seconds)
+            if p.returncode == 0:
+                broadcasting({
+                    'status': 200,
+                    'returncode': 0,
+                    'message': 'script execution success'
+                })
+                logger.info("success, subprocess returncode %d" % p.returncode)
+            else:
+                broadcasting({
+                    'status': 500,
+                    'returncode': p.returncode,
+                    'message': 'script execution failure'
+                })
+                logger.info("failure, subprocess returncode %d" % p.returncode)
+
+
+def execScriptWithThreading(script_file):
+    # 启动一个非attached线程来执行脚本
+    t = ScriptExecutor(script_file)
+    t.setDaemon(True)
+    t.start()
+
+    # 这里也需要返回
+    if t is not None:
+        return {
+            'status': 200,
+            'message': 'script is executing.'
+        }
+    else:
+        return {
+            'status': 500,
+            'message': 'script executor is null.'
+        }
 
 
 @app.route('/clock/<name>')
@@ -89,18 +112,21 @@ def onclock(name):
     if executingFlag:
         logger.error("当前有脚本正在执行中， 不允许重复发起。")
         return {
-            'status': 503,
-            'msg': "当前有脚本正在执行"
+            'status': 500,
+            'message': "当前有脚本正在执行"
         }
     if name == 'all':
         logger.info("clocking all")
-        return execScripts(script_all)
+        return execScriptWithThreading(script_all)
     elif name == 'li':
         logger.info("clocking li")
-        return execScripts(script_li)
+        return execScriptWithThreading(script_li)
     elif name == 'wang':
         logger.info("clocking wang")
-        return execScripts(script_wang)
+        return execScriptWithThreading(script_wang)
+    elif name == 'clear':
+        logger.info("clocking clear")
+        return execScriptWithThreading(script_clear)
     else:
         return redirect('/')
 
@@ -206,9 +232,7 @@ def handle_heartbeat():
 
 
 def broadcasting(data):
-    data = data.decode()
-    logger.info("Broadcasting %s" % data)
-    socketio.emit('message', {'data': data}, broadcast=True)
+    socketio.emit('message', data, broadcast=True)
 
 
 if __name__ == '__main__':
