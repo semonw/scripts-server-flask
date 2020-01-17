@@ -12,8 +12,25 @@ import pytz
 from flask import Flask, redirect, request
 from flask_socketio import SocketIO
 
+# 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# file_handle = logging.FileHandler("log.txt", mode='w', encoding="UTF-8")
+# fmt = logging.Formatter(f"{'*' * 28}\n"
+#                         "> %(asctime)s\n"
+#                         "> %(levelname)s - "
+#                         "%(filename)s - "
+#                         "[line:%(lineno)d]\n"
+#                         f"{'-' * 40}\n"
+#                         "  %(message)s\n"
+#                         f"{'-' * 40}\n\n",
+#                         datefmt="%a, %d %b %Y"
+#                                 "%H:%M:%S"
+#                         )
+# file_handle.setFormatter(fmt)  # 文件句柄设置格式
+# logger.addHandler(file_handle)  # logger对象绑定文件句柄
+
 app = Flask(__name__)
 socketio = SocketIO(app)
 executingFlag = False
