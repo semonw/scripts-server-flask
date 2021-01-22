@@ -23,7 +23,6 @@ socketio = SocketIO(app)
 threads = []
 executingFlag = False
 
-
 @app.route('/')
 def default_output():
     indexfiles = ['index.html', 'index.htm', 'index.php']
